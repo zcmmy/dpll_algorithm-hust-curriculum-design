@@ -2,10 +2,14 @@
 #define DPLL_H
 #include "Global.h"
 
-void CreateClause(const int ord);
-Head* DestroyClause(const Head *tar);
-void Destoryliteral(const int clause_ord, const int literal_ord);
-void AddLiteral(Head *clause, const int ord, const bool is_neg);
-bool DPLL();
+void DestroyList();
+void PrintList();
+void CreateClause();
+Head* DestroyClause(Head *tar, ClauseStack &cs);
+void Destoryliteral(const int ord, ClauseStack &cs, LiteralStack &ls);
+void AddLiteral(Head *clause, int ord, const bool is_neg);
+bool DPLL(int v = 0, bool is_pos = false);
+void printRes();
+void saveRes(const std::string &filename, bool res, int time);
 
 #endif //DPLL_H

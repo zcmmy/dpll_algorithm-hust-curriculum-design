@@ -1,9 +1,19 @@
 #include "dpll.h"
 using namespace std;
 
-extern Head *root, *tail;
-extern int varNum, clauseNum;
+extern Head *root;
+extern int varNum, clauseNum, nums;
 extern bool *value_list;
+
+void PrintList() {
+    for(auto p = root->next; p; p = p->next) {
+        for(auto q = p->first; q; q = q->next) {
+            if(q->is_neg) cout << "-";
+            cout << q->ord << " ";
+        }
+        cout << 0 << endl;
+    }
+}
 
 void DestroyList() {
     // 销毁链表
@@ -21,61 +31,51 @@ void DestroyList() {
     }
 }
 
-void CreateClause(const int ord) {
+void CreateClause() {
     auto *new_Clause = new Head;
-    new_Clause->ord = ord;
-    new_Clause->next = nullptr;
-    tail->next = new_Clause;
-    tail = new_Clause;
+    new_Clause->next = root->next;
+    new_Clause->first = nullptr;
+    root->next = new_Clause;
 }
 
-Head* DestroyClause(const Head *tar) {
+Head* DestroyClause(Head *tar, ClauseStack &cs) {
     // 销毁子句，返回下一子句
     auto p = root;
-    if(tar == tail) {
-        while(p->next != tail) p = p->next;
-        tail = p;
-    }
-    auto q = tar->first;
-    while(q) {
-        auto temp = q;
-        q = q->next;
-        delete temp;
-    }
-    p = root;
     while (p->next != tar && p->next != nullptr) {
         p = p->next;
     }
     p->next = tar->next;
-    delete tar;
+    cs.push(tar);   // 存入回收栈
     return p->next;
 }
 
-void Destoryliteral(const int ord) {
-    Head *p = nullptr;
-    for(p = root; p; p = p->next) {
+void Destoryliteral(const int ord, ClauseStack &cs, LiteralStack &ls) {
+    Head *p = root->next;
+    while(p) {
         for(auto q = p->first; q; q = q->next) {
             if(q->ord == ord) {
-                if(q->is_neg == !(value_list[ord])) {
+                if(q->is_neg != value_list[ord]) {
                     // 文字为真，删除子句
-                    p = DestroyClause(p);
+                    p = DestroyClause(p, cs);
                 }
                 else {
                     // 文字为假，删除变元
                     auto r = p->first;
                     if(r == q) {
                         p->first = q->next;
-                        delete q;
+                        ls.push(q);
                     }
                     else {
                         while(r->next != q) r = r->next;
                         r->next = q->next;
-                        delete q;
+                        ls.push(q);
                     }
+                    p = p->next;
                 }
                 break;
             }
         }
+        if(p) p = p->next;
     }
 }
 
@@ -84,10 +84,11 @@ void AddLiteral(Head *clause, const int ord, const bool is_neg) {
     new_literal->ord = ord;
     new_literal->is_neg = is_neg;
     new_literal->next = clause->first;
+    new_literal->belong = clause;
     clause->first = new_literal;
 }
 
-status UnitPropagation() {
+status UnitPropagation(ClauseStack &cs, LiteralStack &ls) {
     // 单子句传播，返回是否找到单子句
     auto p = root->next;
     while(p) {
@@ -96,21 +97,21 @@ status UnitPropagation() {
             int tar = p->first->ord;
             if(p->first->is_neg) value_list[tar] = false;
             else value_list[tar] = true;
-            DestroyClause(p);
-            Destoryliteral(tar);
+            p = DestroyClause(p, cs);
+            Destoryliteral(tar, cs, ls);
             return FOUND;
         }
-        else p = p->next;
+        p = p->next;
     }
     return NOTHING;
 }
 
-status PureLiteralelimination() {
+status PureLiteralelimination(ClauseStack &cs) {
     // 孤立文字消除，返回是否找到孤立文字
     int count[varNum+1] = {0};
     for(auto *p = root->next; p; p = p->next) {
         for(auto *q = p->first; q; q = q->next)
-            count[-q->ord]++;
+            count[q->ord]++;
     }
     status s = NOTHING;
     auto p = root->next;
@@ -120,7 +121,7 @@ status PureLiteralelimination() {
             if(count[q->ord] == 1) {
                 if(q->is_neg) value_list[q->ord] = false;
                 else value_list[q->ord] = true;
-                p = DestroyClause(p);
+                p = DestroyClause(p, cs);
                 s = FOUND;
                 flag = false;
                 break;
@@ -131,64 +132,85 @@ status PureLiteralelimination() {
     return s;
 }
 
-Head* CopyList() {
-    auto *new_root = new Head;
-    new_root->ord = 0;
-    new_root->first = nullptr;
-    new_root->next = nullptr;
-    Head *new_cur = new_root;
-    // 复制子句
-    for(Head *p = root->next; p != nullptr; p = p->next) {
-        auto *new_clause = new Head;
-        new_clause->ord = p->ord;
-        new_clause->first = nullptr;
-        new_clause->next = nullptr;
-        new_cur->next = new_clause;
-        new_cur = new_clause;
-        // 复制变元
-        for(Node *q = p->first; q != nullptr; q = q->next) {
-            auto *new_literal = new Node;
-            new_literal->ord = q->ord;
-            new_literal->is_neg = q->is_neg;
-            new_literal->next = new_clause->first;
-            new_clause->first = new_literal;
-        }
-    }
-    return new_root;
-}
-
 int ChooseVariable() {
     // 选择变元，启发函数
     return root->next->first->ord;
 }
 
-bool DPLL() {
-    Head *new_root = CopyList();    // 备份
-    bool *new_value_list = new bool[varNum + 1];
+void Backup(ClauseStack &cs, LiteralStack &ls) {
+    // 先对子句栈退栈
+    while(!cs.is_empty()) {
+        auto p = cs.pop();
+        p->next = root->next;
+        root->next = p;
+    }
+    // 再对文字栈退栈
+    while(!ls.is_empty()) {
+        auto p = ls.pop();
+        auto q = (Head*)p->belong;
+        p->next = q->first;
+        q->first = p;
+    }
+}
+
+bool DPLL(int v, bool is_pos) {
+    cout << "Current status: " << ++nums << endl;
+    bool *new_value_list = new bool[varNum + 1];    // 备份变元值列表
     memcpy(new_value_list, value_list, sizeof(bool) * (varNum + 1));
+    auto *cs = new ClauseStack();
+    auto *ls = new LiteralStack();
+    if(v) {
+        value_list[v] = is_pos;
+        Destoryliteral(v, *cs, *ls);
+    }
     // 单子句传播
-    status s;
-    while((s = UnitPropagation()) == FOUND);
-    while((s = PureLiteralelimination()) == FOUND);
+    while(UnitPropagation(*cs, *ls) == FOUND);
+    while(PureLiteralelimination(*cs) == FOUND);
     if(!root->next) return true; // 问题解决
     else {
         int var = ChooseVariable();
-        CreateClause(tail->ord+1);
-        AddLiteral(tail, var, false);
-        if(DPLL()) return true;
+        // 假设变元为真
+        if(DPLL(var, true)) {
+            delete cs;
+            delete ls;
+            delete [] new_value_list;
+            return true;
+        }
+        // 假设变元为假
+        if(DPLL(var, false)) {
+            delete cs;
+            delete ls;
+            delete [] new_value_list;
+            return true;
+        }
         // 回溯
-        DestroyList();
-        delete [] value_list;
-        root = new_root;
-        value_list = new_value_list;
-        CreateClause(tail->ord+1);
-        AddLiteral(tail, var, true);
-        if(DPLL()) return true;
-        // 回溯
-        DestroyList();
-        delete [] value_list;
-        root = new_root;
-        value_list = new_value_list;
     }
+    // 无解，回溯
+    Backup(*cs, *ls);
+    memcpy(value_list, new_value_list, sizeof(bool) * (varNum + 1));
+    delete cs;
+    delete ls;
+    delete[] new_value_list;
     return false;
+}
+
+void printRes() {
+    for(int i = 1; i <= varNum; i++) {
+        if(value_list[i]) cout << 'x' << i << '=' << 1 << endl;
+        else cout << 'x' << i << '=' << 0 << endl;
+    }
+}
+
+void saveRes(const string &filename, bool res, int time) {
+    string path = "../src/resfile/" + filename;
+    if(filename.find(".res") == string::npos) path += ".res";
+    ofstream file(path, ios::out);
+    file << 's' << ' ' << res << endl;
+    file << 'v' << ' ';
+    for(int i = 1; i <= varNum; i++) {
+        if(value_list[i] == 0) file << '-';
+        file << i << ' ';
+    }
+    file << endl;
+    file << 't' << ' ' << time << endl;
 }

@@ -3,8 +3,8 @@
 #include "dpll.h"
 using namespace std;
 
-Head *root = nullptr, *tail = nullptr;
-int varNum = 0, clauseNum = 0;
+Head *root = nullptr;
+int varNum = 0, clauseNum = 0, nums = 0;
 bool *value_list = nullptr;
 
 int main() {
@@ -15,10 +15,14 @@ int main() {
     if(DPLL()) {
         // 打印解
         cout << "Satified!" << endl;
-        for(int i = 1; i <= varNum; ++i) {
-            cout << "x" << i << " = " << value_list[i] << endl;
-        }
+        // printRes();
+        // saveRes(filename, true, 1000);
     }
-    else cout << "Unsatisfied!" << endl;
+    else {
+        cout << "Unsatisfied!" << endl;
+        // saveRes(filename, false, 1000);
+    }
+    DestroyList();
+    system("pause");
     return 0;
 }

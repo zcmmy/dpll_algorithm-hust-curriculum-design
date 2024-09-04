@@ -11,4 +11,5 @@ add_executable(dpll_algorithm src/main.cpp
         src/dpll.h
         src/dpll.cpp
         src/cnfparser.cpp
-        src/cnfparser.h)
+        src/cnfparser.h
+)
