@@ -2,16 +2,16 @@
 using namespace std;
 
 extern Head *root;
-extern int varNum, clauseNum, nums;
+extern int varNum, clauseNum, nums, nums2;
 extern bool *value_list;
 
 void PrintList() {
     for(auto p = root->next; p; p = p->next) {
         for(auto q = p->first; q; q = q->next) {
-            if(q->is_neg) cout << "-";
-            cout << q->ord << " ";
+            if(q->is_neg) printf("-");
+            printf("%d ", q->ord);
         }
-        cout << 0 << endl;
+        printf("0\n");
     }
 }
 
@@ -49,14 +49,16 @@ Head* DestroyClause(Head *tar, ClauseStack &cs) {
     return p->next;
 }
 
-void Destoryliteral(const int ord, ClauseStack &cs, LiteralStack &ls) {
+status Destroyliteral(const int ord, ClauseStack &cs, LiteralStack &ls) {
     Head *p = root->next;
     while(p) {
+        bool flag = true;
         for(auto q = p->first; q; q = q->next) {
             if(q->ord == ord) {
                 if(q->is_neg != value_list[ord]) {
                     // 文字为真，删除子句
                     p = DestroyClause(p, cs);
+                    flag = false;
                 }
                 else {
                     // 文字为假，删除变元
@@ -70,13 +72,15 @@ void Destoryliteral(const int ord, ClauseStack &cs, LiteralStack &ls) {
                         r->next = q->next;
                         ls.push(q);
                     }
-                    p = p->next;
+                    if(p->first == nullptr)    // 子句被清空，说明该子句恒为假，返回矛盾
+                        return CONFLICT;
                 }
                 break;
             }
         }
-        if(p) p = p->next;
+        if(p && flag) p = p->next;
     }
+    return NOTHING;
 }
 
 void AddLiteral(Head *clause, const int ord, const bool is_neg) {
@@ -98,11 +102,18 @@ status UnitPropagation(ClauseStack &cs, LiteralStack &ls) {
             if(p->first->is_neg) value_list[tar] = false;
             else value_list[tar] = true;
             p = DestroyClause(p, cs);
-            Destoryliteral(tar, cs, ls);
+            if(Destroyliteral(tar, cs, ls) == CONFLICT) {
+                // cout << "Conflict occured!" << endl;
+                return CONFLICT;
+            }
+            // cout << "UnitPropagation found, " << "target literal is: " << tar << endl;
+            // PrintList();
             return FOUND;
         }
         p = p->next;
     }
+    // cout << "UnitProgation not found" << endl;
+    // PrintList();
     return NOTHING;
 }
 
@@ -123,12 +134,15 @@ status PureLiteralelimination(ClauseStack &cs) {
                 else value_list[q->ord] = true;
                 p = DestroyClause(p, cs);
                 s = FOUND;
+                // cout << "PureLiteralElimination found, " << "target literal is: " << q->ord << endl;
+                // PrintList();
                 flag = false;
                 break;
             }
         }
         if(flag) p = p->next;
     }
+    // if(s == NOTHING) cout << "PureLiteralElimination not found" << endl;
     return s;
 }
 
@@ -154,17 +168,39 @@ void Backup(ClauseStack &cs, LiteralStack &ls) {
 }
 
 bool DPLL(int v, bool is_pos) {
-    cout << "Current status: " << ++nums << endl;
+    if(nums%100000) cout << flush;
+    printf("Current status: %d\n", ++nums);
+    // cout << "set variable " << v << " to " << is_pos << endl;
     bool *new_value_list = new bool[varNum + 1];    // 备份变元值列表
     memcpy(new_value_list, value_list, sizeof(bool) * (varNum + 1));
     auto *cs = new ClauseStack();
     auto *ls = new LiteralStack();
     if(v) {
         value_list[v] = is_pos;
-        Destoryliteral(v, *cs, *ls);
+        if(Destroyliteral(v, *cs, *ls) == CONFLICT) {
+            // cout << "Conflict occured!" << endl;
+            Backup(*cs, *ls);
+            delete cs;
+            delete ls;
+            delete [] new_value_list;
+            // printf("recall %d\n", ++nums2);
+            return false;
+        }
     }
     // 单子句传播
-    while(UnitPropagation(*cs, *ls) == FOUND);
+    while(true) {
+        status s = UnitPropagation(*cs, *ls);
+        if(s == CONFLICT) {
+            Backup(*cs, *ls);
+            memcpy(value_list, new_value_list, sizeof(bool) * (varNum + 1));
+            delete cs;
+            delete ls;
+            delete [] new_value_list;
+            // printf("recall %d\n", ++nums2);
+            return false;
+        }
+        else if(s == NOTHING) break;
+    }
     while(PureLiteralelimination(*cs) == FOUND);
     if(!root->next) return true; // 问题解决
     else {
@@ -174,16 +210,19 @@ bool DPLL(int v, bool is_pos) {
             delete cs;
             delete ls;
             delete [] new_value_list;
+            // printf("recall %d\n", ++nums2);
             return true;
         }
+        // cout << "end of true" << endl;
         // 假设变元为假
         if(DPLL(var, false)) {
             delete cs;
             delete ls;
             delete [] new_value_list;
+            printf("recall %d\n", ++nums2);
             return true;
         }
-        // 回溯
+        // cout << "end of false" << endl;
     }
     // 无解，回溯
     Backup(*cs, *ls);
@@ -191,6 +230,7 @@ bool DPLL(int v, bool is_pos) {
     delete cs;
     delete ls;
     delete[] new_value_list;
+    // printf("recall %d\n", ++nums2);
     return false;
 }
 
@@ -201,7 +241,7 @@ void printRes() {
     }
 }
 
-void saveRes(const string &filename, bool res, int time) {
+void saveRes(const string &filename, bool res, double time) {
     string path = "../src/resfile/" + filename;
     if(filename.find(".res") == string::npos) path += ".res";
     ofstream file(path, ios::out);

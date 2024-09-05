@@ -9,7 +9,7 @@
 typedef int status;
 #define FOUND 1
 #define NOTHING 0
-#define ERROR -1
+#define CONFLICT -1
 
 typedef struct Node {   // 变元节点
     int ord;    // 变元序号

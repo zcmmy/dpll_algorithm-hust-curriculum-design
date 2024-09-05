@@ -20,7 +20,7 @@ void CNFParser(const string &filename) {
         file.getline(buf, 100);
         file.get(ch);
     }
-    file >> buf >> clauseNum >> varNum;   // 读取变元数和子句数
+    file >> buf >> varNum >> clauseNum;   // 读取变元数和子句数
     value_list = new bool[varNum + 1];   // 初始化变元值列表
     memset(value_list, 0, sizeof(bool) * (varNum + 1));
     root = new Head;
